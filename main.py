@@ -314,7 +314,7 @@ def pointInPoly(x, y, corners):
 
 # CLASSES
 class Airport:
-    def __init__(self, x, y, rwy_hdg, icao_code, name, auto_draw_canvas=None, auto_draw=True, cta_boundary=None, atc_stations=[], master=False):
+    def __init__(self, x, y, rwy_hdg, icao_code, name, auto_draw_canvas=None, auto_draw=True, cta_boundary=None, atc_stations=[], ils="4000@10", master=False):
         self.x = x
         self.y = y
         self.rwy_hdg = rwy_hdg
@@ -329,10 +329,19 @@ class Airport:
         self.all_drawn = []
         self.stations = atc_stations
         self.atz_radius = None
+        self.ils_alt_10nm = self.calc_ils_alt(ils)
         for station in self.stations:
             if station.type == "tower" and type(station.cta) in (int, float):
                 self.atz_radius = station.cta
         if auto_draw: self.draw(auto_draw_canvas)
+
+    def calc_ils_alt(self, ils):
+        alt, dist = ils.split("@")
+        alt = float(alt)
+        dist = float(dist)
+        scale = alt/dist
+        alt_10 = scale * 10
+        return alt_10
 
     def draw(self, canvas):
         centerline_package = self.rwy_centerlines()
@@ -450,7 +459,6 @@ class Blip:
         while self.desired_heading > 360:
             self.desired_heading -= 10
         self.desired_speed = random.randint(self.kts - 100, self.kts + 100)
-        print(self.callsign, self.desired_speed, self.kts, self.kts - self.desired_speed)
         self.conflicting = False  # Needs testing
         self.blip_radius = 5
         self.atc_package = {"controlled": False,
@@ -733,13 +741,13 @@ class Sim:
             self.blips[blip_id].clear(self.canvas)
 
     def create_scenery(self):
-        print("Check air traffic stations irl for input into scenery")
         self.airports["EGDM"] = Airport(400, 400,
                                         230, "EGDM", "Boscombe Down",
                                         self.canvas,
                                         cta_boundary=plotCTA(400, 400, EGDM_CTA),
                                         atc_stations=[Station("Boscombe Radar", 130.005, "radar", boundary=EGDM_CTA, isuser=True),  # Make boundary
                                                       Station("Boscombe Tower", 130.755, "tower", atz_radius=2.5)],
+                                        ils="3000@7",
                                         master=True)
         self.master_airport = "EGDM"
         self.airports["EGVO"] = Airport(400+nm2px(30), 400-nm2px(5), 270, "EGVO", "Odiham", self.canvas)
