@@ -443,8 +443,13 @@ class Blip:
         self.location_history = []
         self.altitude = altitude
         self.altitude_history = []
-        self.set_altitude = altitude
-        self.vertical_speed = 0  # fpm
+        self.desired_altitude = random.randint(self.altitude - 1000, self.altitude + 1000)
+        self.desired_heading = random.randint(self.hdg - 200, self.hdg + 200)
+        while self.desired_heading < 0:
+            self.desired_heading += 10
+        while self.desired_heading > 360:
+            self.desired_heading -= 10
+        self.desired_speed = None
         self.conflicting = False  # Needs testing
         self.blip_radius = 5
         self.atc_package = {"controlled": False,
@@ -455,14 +460,6 @@ class Blip:
         self.all_drawn = []
         self.active_station = active_station
         if auto_draw: self.draw(auto_draw_canvas)
-
-    def change_altitude_to(self, new_alt):
-        self.altitude_history.append(self.altitude)
-        self.altitude = new_alt
-
-    def change_altitude_by(self, difference):
-        self.altitude_history.append(self.altitude)
-        self.altitude += difference
 
     def altitude_direction(self):
         char = "-"
@@ -476,7 +473,7 @@ class Blip:
 
     def alt_to_lbl(self):
         alt = round(self.altitude, -2)//100
-        alt = str(alt)
+        alt = str(int(alt))
         while len(alt) < 3:
             alt = "0"+alt
         return alt
@@ -490,21 +487,55 @@ class Blip:
     
 
     def move(self, canvas):
-        if self.altitude in range(self.set_altitude-100, self.set_altitude+100):
-            self.vertical_speed = 0
-            self.altitude = self.set_altitude
-        elif self.altitude < self.set_altitude:
-            if self.vertical_speed == 0:
-                lower, upper = 500, 2000
+        # ALTITUDE
+        vertical_speed = 200  # fpm will edit for speed
+        t = (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        t /= 60
+        vertical_speed *= t
+        if self.desired_altitude is not None:
+            if self.desired_altitude < self.altitude:
+                vertical_speed *= -1
+            next_altitude = self.altitude + vertical_speed
+            self.altitude_history.append(self.altitude)
+            if vertical_speed < 0 and next_altitude < self.desired_altitude:
+                self.altitude = self.desired_altitude
+                self.desired_altitude = None
+            elif vertical_speed > 0 and next_altitude > self.desired_altitude:
+                self.altitude = self.desired_altitude
+                self.desired_altitude = None
             else:
-                lower, upper = self.vertical_speed-200, self.vertical_speed+200
-            if lower <= 100:
-                lower = 100
-            if upper >= 2500:
-                upper = 2500
-            self.vertical_speed = random.randint(lower, upper)
-        elif self.altitude > self.set_altitude:
-            self.vertical_speed = random.randint(-700, -300)
+                self.altitude = next_altitude
+        else:
+            self.altitude_history.append(self.altitude)
+
+        # HEADING
+        """
+        degrees_of_bank = 30  # shouldn't need to change
+        from math import tan, pi
+        radius_of_turn = (self.kts ** 2) / (9.81 * tan(radians(degrees_of_bank)))
+        rate_of_turn = radius_of_turn ** -1
+        degrees_per_sec = rate_of_turn * (180 / pi)
+        time_in_tick = (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        degrees = degrees_per_sec * time_in_tick
+        """
+        degrees_per_sec = 2
+        degrees = degrees_per_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        if self.desired_heading is not None:
+            if self.desired_heading > self.hdg:
+                next_hdg = self.hdg + degrees
+            elif self.desired_heading < self.hdg:
+                next_hdg = self.hdg - degrees
+            else:
+                next_hdg = self.hdg
+            if next_hdg < self.hdg and next_hdg < self.desired_heading:
+                self.hdg = self.desired_heading
+                self.desired_heading = None
+            elif next_hdg > self.hdg and next_hdg > self.desired_heading:
+                self.hdg = self.desired_heading
+                self.desired_heading = None
+            else:
+                self.hdg = next_hdg
+
         unit_time = TICK_DURATION/1000  # ms -> s
         unit_time /= (60*60)  # s -> m -> h
         distance_travelled = nm2px(self.kts*unit_time)  # px
@@ -514,7 +545,7 @@ class Blip:
         if DISPLAY["CRUMBS"]:
             other = True
             for x, y in self.location_history:
-                if other: self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1, fill=SCREEN_FG if self.atc_package["controlled"] else BLIP_FADE))
+                if other: self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1, fill=SCREEN_FG))
                 other = not other
         else:
             self.location_history = []
@@ -523,7 +554,7 @@ class Blip:
         self.location_history.append((self.x, self.y))
         while len(self.location_history) > 10:
             self.location_history.pop(0)
-        self.change_altitude_by(self.vertical_speed//60)
+        print(self.callsign, len(self.location_history), self.location_history)
 
         """
         TEST: FUNCTION BROKEN!
