@@ -1,0 +1,67 @@
+{
+    "exercise_info": {
+        "master_airport": "EGDM",
+        "author": "Your Name Here"
+    },
+    "display_override": {
+        "C/S_SSR": "SSR",
+        "RINGS": true,
+        "RINGS_N": 3,
+        "RINGS_D": 10,
+        "LINES": true,
+        "LINES_M": "Time",
+        "LINES_N": 2,
+        "CRUMBS": true,
+        "CONTROLLED": false,
+        "EST_ALT_REACH": false,
+        "AIRSPACE": true,
+        "CTA_WIDTH": 1,
+        "EXTRA_LABEL": true,
+        "SIM_SPEED": 1,
+        "WEATHER": "RANDOM"
+    },
+    "scenery": {
+        "airports": {
+            "EGDM": {
+                "xy": [400, 400],
+                "runway_heading": 230,
+                "name": "Boscombe Down",
+                "cta_boundary_plot_nm": [[-20, -15], [-10, -18], [15, -19], [20, -21], [15, -5], [19, 15], [0, 20], [-10, 18], [-18, 20], [-22, 8]],
+                "atc_stations": [
+                    {
+                        "name": "Boscombe Radar",
+                        "vhf_frequency": 130.005,
+                        "type": "radar",
+                        "boundary_plot": "inherit",
+                        "is_user": true
+                    },
+                    {
+                        "name": "Boscombe Tower",
+                        "vhf_frequency": 130.755,
+                        "type": "tower",
+                        "atz_radius_nm": 2.5,
+                        "is_user": false
+                    }
+                ],
+                "ils_alt@nm": "3000@7",
+                "master_airport": true
+            },
+            "EGVO": {
+                "xy": [30, -5],
+                "runway_heading": 270,
+                "name": "Odiham"
+            },
+            "EGVA": {
+                "xy": [-1, -31],
+                "runway_heading": 250,
+                "name": "Fairford"
+            }
+        }
+    },
+    "aircraft": {
+        "type": "custom",
+        "starter": [
+            "TBC..."
+        ]
+    }
+}
