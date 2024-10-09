@@ -459,6 +459,9 @@ class Blip:
         while self.desired_heading > 360:
             self.desired_heading -= 10
         self.desired_speed = random.randint(self.kts - 100, self.kts + 100)
+        self.waiting_for_app = False
+        self.following_app = False
+        self.planned_go_around = False  # needs implementing
         self.conflicting = False  # Needs testing
         self.blip_radius = 5
         self.atc_package = {"controlled": False,
@@ -496,6 +499,9 @@ class Blip:
     
 
     def move(self, canvas):
+        # APPROACH IMPLEMENTATION REQ!
+
+
         # ALTITUDE
         vertical_speed = 200  # fpm will edit for speed
         t = (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
