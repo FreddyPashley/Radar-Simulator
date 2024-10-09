@@ -449,7 +449,8 @@ class Blip:
             self.desired_heading += 10
         while self.desired_heading > 360:
             self.desired_heading -= 10
-        self.desired_speed = None
+        self.desired_speed = random.randint(self.kts - 100, self.kts + 100)
+        print(self.callsign, self.desired_speed, self.kts, self.kts - self.desired_speed)
         self.conflicting = False  # Needs testing
         self.blip_radius = 5
         self.atc_package = {"controlled": False,
@@ -536,6 +537,22 @@ class Blip:
             else:
                 self.hdg = next_hdg
 
+        # SPEED
+        rate_kts_sec = 2
+        rate = rate_kts_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        if self.desired_speed is not None:
+            if self.desired_speed < self.kts:
+                rate *= -1
+            next_speed = self.kts + rate
+            if next_speed < self.kts and next_speed < self.desired_speed:
+                self.kts = self.desired_speed
+                self.desired_speed = None
+            elif next_speed > self.kts and next_speed > self.desired_speed:
+                self.kts = self.desired_speed
+                self.desired_speed = None
+            else:
+                self.kts = next_speed
+
         unit_time = TICK_DURATION/1000  # ms -> s
         unit_time /= (60*60)  # s -> m -> h
         distance_travelled = nm2px(self.kts*unit_time)  # px
@@ -554,7 +571,6 @@ class Blip:
         self.location_history.append((self.x, self.y))
         while len(self.location_history) > 10:
             self.location_history.pop(0)
-        print(self.callsign, len(self.location_history), self.location_history)
 
         """
         TEST: FUNCTION BROKEN!
@@ -868,8 +884,7 @@ class Sim:
             weather_package = liveWeather("EGDM")  # Auto req
             lbl_txt = weather_package["METAR"]
         self.metar = tk.Label(self.root, text="METAR: "+lbl_txt, bg=SCREEN_BG)
-        self.metar.place(x=(self.master_width-self.screen_lengths)/2, y=self.screen_lengths - 25)
-        
+        self.metar.place(x=(self.master_width-self.screen_lengths)/2, y=self.screen_lengths - 25)  # 25 is purely visual adjustment        
 
 
 def btn_padx(text):
