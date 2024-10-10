@@ -1,7 +1,7 @@
 {
     "exercise_info": {
         "master_airport": "EGDM",
-        "author": "Your Name Here"
+        "author": "Freddy Pashley"
     },
     "display_override": {
         "C/S_SSR": "SSR",
@@ -59,9 +59,7 @@
         }
     },
     "aircraft": {
-        "type": "custom",
-        "starter": [
-            "TBC..."
-        ]
+        "type": "random",
+        "max_amount": 5
     }
 }

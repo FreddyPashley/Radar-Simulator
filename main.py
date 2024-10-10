@@ -1,8 +1,6 @@
 """
 TO DO:
 
-Sim controls - speed, environment
-Ident no flash? Change colour? (Red for conflict?? Pink for ident?)
 Separation alerts - NEEDS TESTING
 Aircraft go to waypoint algorithm (incl approaches, takeoff etc, special)
 Airspace boundaries - Func needs fixing
@@ -20,21 +18,27 @@ import tkinter as tk
 from tkinter import font
 from math import radians, sin, cos
 import random
+import json
 import threading
 import time
 
 # GLOBALS
+IMPORTED = "EGDM.json"  # input req
+try:
+    with open(IMPORTED) as f:
+        EXERCISE = json.load(f)
+except Exception as err:
+    raise err
 TITLE = "Radar Controller Simulation"
 SCREEN_BG = "#c3c3c3"
 BLIP_FADE = "#00f"
 SCREEN_FG = "#000"
-IDENT_COLOUR = "#0f0"  # Change to pink?
+IDENT_COLOUR = "#0f0"  # Change to pink? green atm (red conflict, blue controlled...)
 IDENT_COUNT_MAX = 5
 SCALE_FACTOR = 12  # SFpx = 1nm (higher SF = more zoom)
 TICK_DURATION = 4000  # ms
 PAUSED = True
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-EGDM_CTA = [(-20, -15), (-10, -18), (15, -19), (20, -21), (15, -5), (19, 15), (0, 20), (-10, 18), (-18, 20), (-22, 8)]  # To load in from external?
 DISPLAY = {"TICKED": False,  # Print when sim ticks in terminal
            "C/S_SSR": "SSR",  # Callsign or squawk on label (C/S, SSR)
            "RINGS": False,  # Toggles range rings on master airport
@@ -54,23 +58,26 @@ DISPLAY = {"TICKED": False,  # Print when sim ticks in terminal
            "SIM_SPEED": 1,  # Multiplier for TICK_DURATION
            "WEATHER": "OFF",  # Toggles OFF RANDOM LIVE
            }
+if "display_override" in EXERCISE.keys():
+    for k in EXERCISE["display_override"]:
+        DISPLAY[k] = EXERCISE["display_override"][k]
 DISPLAY_OLD = DISPLAY.copy()  # For reset display option
 
 # GLOBAL FUNCTIONS
 def px2nm(px):
     """Converts pixels into nautical miles based on scale factor."""
-    return px/SCALE_FACTOR
+    return px / SCALE_FACTOR
     
 
 def nm2px(nm):
     """Converts nautical miles into pixels based on scale factor."""
-    return nm*SCALE_FACTOR
+    return nm * SCALE_FACTOR
 
 
 def dist2m(speed_kts, dist, unit):
     """Calculates the distance (nm) travelled by an object in d units, based on its speed in knots."""
     if unit == "Time":
-        t = dist/60
+        t = dist / 60
         return speed_kts * t
     elif unit == "Dist":
         return dist
@@ -123,7 +130,9 @@ def randomWeather(icao_code):
                        "visibility": round(random.randint(*cat["visibility"]), -2) if cat["visibility"][0] != cat["visibility"][1] else cat["visibility"][0],
                        "wind": {"degrees": round(random.randint(1, 360), -1), "speed": random.randint(*cat["wind_kts"])}}  # random clouds req
     t = dt.now()
-    raw_text = f"{icao_code.upper()} {'0' if t.day < 10 else ''}{t.day}{'0' if t.hour < 10 else ''}{t.hour}{'0' if t.minute < 10 else ''}{t.minute}Z AUTO {'0'*(3-len(str(weather_package['wind']['degrees'])))}{weather_package['wind']['degrees']}{'0' if weather_package['wind']['speed'] < 10 else ''}{weather_package['wind']['speed']}KT {weather_package['visibility']} "
+    raw_text = f"{icao_code.upper()} {'0' if t.day < 10 else ''}{t.day}{'0' if t.hour < 10 else ''}{t.hour}{'0' if t.minute < 10 else ''}{t.minute}Z "
+    raw_text += f"AUTO {'0'*(3-len(str(weather_package['wind']['degrees'])))}{weather_package['wind']['degrees']}"
+    raw_text += f"{'0' if weather_package['wind']['speed'] < 10 else ''}{weather_package['wind']['speed']}KT {weather_package['visibility']} "
     order = ("FEW", "SCT", "BKN", "OVC")
     if cat["clouds"] is None:
         raw_text += "NCD "
@@ -166,10 +175,10 @@ def randomWeather(icao_code):
                 alt = str(alt)[:-2]
                 while len(alt) < 3:
                     alt = "0" + alt
-                c = fs+alt
+                c = fs + alt
                 used.append(fs)
-                raw_text += c+" "
-                cs += c+" "
+                raw_text += c + " "
+                cs += c + " "
         weather_package["clouds"] = cs
     
     # DEW POINT LEADING ZERO
@@ -189,7 +198,7 @@ def randomWeather(icao_code):
 def liveWeather(icao_code, api_key="a4be9e1dd79d4e75a55102a941"):
     """Pulls live weather for the airport and converts it into a weather package."""
     from requests import get, exceptions
-    url = "https://api.checkwx.com/metar/"+icao_code.upper()+"/decoded?key="+api_key
+    url = "https://api.checkwx.com/metar/" + icao_code.upper() + "/decoded?key=" + api_key
     try:
         r = get(url)
     except exceptions.ConnectionError as err:
@@ -234,9 +243,9 @@ def plotCTA(x, y, points):
 def pointInCircle(x, y, center_x, center_y, radius, on=True):
     """Returns True/False if coordinate within circle. 'on' = inclusive."""
     if on:
-        return ((x-center_x) ** 2)+((y-center_y) ** 2) <= (radius ** 2)
+        return ((x-center_x) ** 2) + ((y-center_y) ** 2) <= (radius ** 2)
     else:
-        return ((x-center_x) ** 2)+((y-center_y) ** 2) < (radius ** 2)
+        return ((x-center_x) ** 2) + ((y-center_y) ** 2) < (radius ** 2)
 
 
 def doLinesCross(line1a, line1b, line2a, line2b):
@@ -250,31 +259,31 @@ def doLinesCross(line1a, line1b, line2a, line2b):
     if x1 == x2:  # Line 1 is vertical
         x = x1
         if x3 != x4:  # Line 2 is not vertical
-            line2m = (y4-y3)/(x4-x3)
-            line2c = y3-line2m*x3
-            y = line2m*x+line2c
+            line2m = (y4 - y3) / (x4 - x3)
+            line2c = y3 - line2m * x3
+            y = line2m * x + line2c
         else:  # Both lines are vertical and parallel
             return False
     elif x3 == x4:  # Line 2 is vertical
         x = x3
-        line1m = (y2-y1)/(x2-x1)
-        line1c = y1-line1m*x1
-        y = line1m*x+line1c
+        line1m = (y2 - y1) / (x2 - x1)
+        line1c = y1 - line1m * x1
+        y = line1m * x + line1c
     else:
         # Calculate slopes and intercepts
-        line1m = (y2-y1)/(x2-x1)
-        line2m = (y4-y3)/(x4-x3)
+        line1m = (y2 - y1) / (x2 - x1)
+        line2m = (y4 - y3) / (x4 - x3)
         
         # Parallel lines have no intersection
         if line1m == line2m:
             return False
         
         # Calculate intersection point
-        line1c = y1-line1m*x1
-        line2c = y3-line2m*x3
+        line1c = y1 - line1m * x1
+        line2c = y3 - line2m * x3
         
-        x = (line2c-line1c)/(line1m-line2m)
-        y = line1m*x+line1c
+        x = (line2c - line1c) / (line1m - line2m)
+        y = line1m * x + line1c
     
     # Check if the intersection point is within the segment bounds
     if min(x1, x2) <= x <= max(x1, x2) and min(y1, y2) <= y <= max(y1, y2) and \
@@ -314,9 +323,10 @@ def pointInPoly(x, y, corners):
 
 # CLASSES
 class Airport:
-    def __init__(self, x, y, rwy_hdg, icao_code, name, auto_draw_canvas=None, auto_draw=True, cta_boundary=None, atc_stations=[], ils="4000@10", master=False):
-        self.x = x
-        self.y = y
+    def __init__(self, x, y, rwy_hdg, icao_code, name, auto_draw_canvas=None, auto_draw=True,
+                 cta_boundary=None, atc_stations=[], ils="4000@10", master=False):
+        self.x = nm2px(x) if not master else x
+        self.y = nm2px(y) if not master else x
         self.rwy_hdg = rwy_hdg
         self.icao = icao_code
         self.name = name
@@ -327,19 +337,23 @@ class Airport:
         self.cta_boundary = cta_boundary
         self.marker_length = 7  # Trial and error for aesthetics (arbitrary)
         self.all_drawn = []
-        self.stations = atc_stations
+        self.stations = [Station(s["name"], s["vhf_frequency"], s["type"],
+                                 atz_radius=s["atz_radius_nm"] if "atz_radius_nm" in s.keys() else None,
+                                 boundary=s["boundary_plot"] if "boundary_plot" in s.keys() else None,
+                                 isuser=s["is_user"]) for s in atc_stations]
         self.atz_radius = None
         self.ils_alt_10nm = self.calc_ils_alt(ils)
         for station in self.stations:
             if station.type == "tower" and type(station.cta) in (int, float):
                 self.atz_radius = station.cta
-        if auto_draw: self.draw(auto_draw_canvas)
+        if auto_draw:
+            self.draw(auto_draw_canvas)
 
     def calc_ils_alt(self, ils):
         alt, dist = ils.split("@")
         alt = float(alt)
         dist = float(dist)
-        scale = alt/dist
+        scale = alt / dist
         alt_10 = scale * 10
         return alt_10
 
@@ -367,7 +381,7 @@ class Airport:
         if self.master:
             if DISPLAY["RINGS"]:
                 for i in range(1, DISPLAY["RINGS_N"] + 1):
-                    radius = nm2px(i*DISPLAY["RINGS_D"])
+                    radius = nm2px(i * DISPLAY["RINGS_D"])
                     self.all_drawn.append(canvas.create_oval(self.x-radius,
                                                              self.y-radius,
                                                              self.x+radius,
@@ -375,8 +389,21 @@ class Airport:
                                                              outline=SCREEN_FG))
             self.range_markers((self.x, self.y), self.rwy_hdg, canvas)
             if DISPLAY["AIRSPACE"]:
-                for line in self.cta_boundary:
-                    x1, y1, x2, y2 = line
+                for i, line in enumerate(self.cta_boundary):
+                    try:
+                        x2, y2 = self.cta_boundary[i+1]
+                    except IndexError:
+                        x2, y2 = self.cta_boundary[0]
+                    finally:
+                        x1, y1 = line
+                    x1 = nm2px(x1)
+                    y1 = nm2px(y1)
+                    x2 = nm2px(x2)
+                    y2 = nm2px(y2)
+                    x1 += self.x
+                    x2 += self.x
+                    y1 += self.y
+                    y2 += self.y
                     self.all_drawn.append(canvas.create_line(x1, y1, x2, y2, fill=SCREEN_FG, dash=".", width=DISPLAY["CTA_WIDTH"]))
             if self.atz_radius is not None:
                 radius = nm2px(self.atz_radius)
@@ -384,7 +411,6 @@ class Airport:
                                                             self.x+radius, self.y+radius,
                                                             outline=SCREEN_FG, dash="-", width=1))
                     
-
     def rwy_centerlines(self):
         length = self.centerline_length
         if self.half_minor_centerlines and not self.master:
@@ -392,22 +418,22 @@ class Airport:
         package = []
         length = nm2px(length)
         rads = radians(self.rwy_hdg)
-        width = sin(rads)*length
-        height = -cos(rads)*length
-        package.append((self.x+width, self.y+height))
-        rads = radians(self.rwy_hdg+180)
-        width = sin(rads)*length
-        height = -cos(rads)*length
-        package.append((self.x+width, self.y+height))
+        width = sin(rads) * length
+        height = -cos(rads) * length
+        package.append((self.x + width, self.y + height))
+        rads = radians(self.rwy_hdg + 180)
+        width = sin(rads) * length
+        height = -cos(rads) * length
+        package.append((self.x + width, self.y + height))
         return package
     
     def range_markers(self, origin, heading, canvas):
         d = nm2px(1)
         for _ in range(2):
-            hdg = radians(heading-10)
+            hdg = radians(heading - 10)  # needs fixing
             angle = hdg+radians(90)
-            dy = -sin(hdg)*d
-            dx = cos(hdg)*d
+            dy = -sin(hdg) * d
+            dx = cos(hdg) * d
             coords = []
             x, y = origin
             for i in range(self.centerline_length):
@@ -420,12 +446,12 @@ class Airport:
                 length = self.marker_length
                 if i % 5 == 0:
                     length *= 2
-                dy = -sin(angle)*length
-                dx = cos(angle)*length
-                coord1 = (x+dx, y+dy)
-                dy = -cos(angle)*length
-                dx = sin(angle)*length
-                coord2 = (x+dx, y+dy)
+                dy = -sin(angle) * length
+                dx = cos(angle) * length
+                coord1 = (x + dx, y + dy)
+                dy = -cos(angle) * length
+                dx = sin(angle) * length
+                coord2 = (x + dx, y + dy)
                 self.all_drawn.append(canvas.create_line(*coord1, *coord2))
             heading += 180
 
@@ -442,7 +468,8 @@ class Airport:
 
 
 class Blip:
-    def __init__(self, x, y, hdg, kts, callsign, altitude, squawk, active_station=None, auto_draw_canvas=None, auto_draw=True):
+    def __init__(self, x, y, hdg, kts, callsign, altitude, squawk,
+                 active_station=None, auto_draw_canvas=None, auto_draw=True):
         self.x = x
         self.y = y
         self.hdg = hdg
@@ -484,18 +511,18 @@ class Blip:
         return char
 
     def alt_to_lbl(self):
-        alt = round(self.altitude, -2)//100
+        alt = round(self.altitude, -2) // 100
         alt = str(int(alt))
         while len(alt) < 3:
-            alt = "0"+alt
+            alt = "0" + alt
         return alt
 
     def hdg_to_coord(self, dist, unit):
         length = nm2px(dist2m(self.kts, dist, unit))
         rads = radians(self.hdg)
-        width = sin(rads)*length
-        height = -cos(rads)*length
-        return self.x+width, self.y+height
+        width = sin(rads) * length
+        height = -cos(rads) * length
+        return self.x + width, self.y + height
     
 
     def move(self, canvas):
@@ -504,7 +531,7 @@ class Blip:
 
         # ALTITUDE
         vertical_speed = 200  # fpm will edit for speed
-        t = (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        t = (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
         t /= 60
         vertical_speed *= t
         if self.desired_altitude is not None:
@@ -534,7 +561,7 @@ class Blip:
         degrees = degrees_per_sec * time_in_tick
         """
         degrees_per_sec = 2
-        degrees = degrees_per_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        degrees = degrees_per_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
         if self.desired_heading is not None:
             if self.desired_heading > self.hdg:
                 next_hdg = self.hdg + degrees
@@ -553,7 +580,7 @@ class Blip:
 
         # SPEED
         rate_kts_sec = 2
-        rate = rate_kts_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"])/1000
+        rate = rate_kts_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
         if self.desired_speed is not None:
             if self.desired_speed < self.kts:
                 rate *= -1
@@ -567,12 +594,12 @@ class Blip:
             else:
                 self.kts = next_speed
 
-        unit_time = TICK_DURATION/1000  # ms -> s
-        unit_time /= (60*60)  # s -> m -> h
-        distance_travelled = nm2px(self.kts*unit_time)  # px
+        unit_time = TICK_DURATION / 1000  # ms -> s
+        unit_time /= (60 * 60)  # s -> m -> h
+        distance_travelled = nm2px(self.kts * unit_time)  # px
         rads = radians(self.hdg)
-        dx = sin(rads)*distance_travelled
-        dy = -cos(rads)*distance_travelled
+        dx = sin(rads) * distance_travelled
+        dy = -cos(rads) * distance_travelled
         if DISPLAY["CRUMBS"]:
             other = True
             for x, y in self.location_history:
@@ -647,20 +674,20 @@ class Blip:
                 other = not other
         if DISPLAY["EST_ALT_REACH"]:
             alt_remaining = abs(self.altitude-self.set_altitude)
-            miles_per_min = self.kts/60
+            miles_per_min = self.kts / 60
             if self.vertical_speed != 0:
-                time_to_alt = alt_remaining/self.vertical_speed
+                time_to_alt = alt_remaining / self.vertical_speed
             else:
                 time_to_alt = float("inf")  # VS is 0, no change in alt so no point on screen
             if time_to_alt <= 2:
                 miles_travelled = miles_per_min*time_to_alt
                 distance = nm2px(miles_travelled)
                 rads = radians(self.hdg)
-                width = sin(rads)*distance
-                height = -cos(rads)*distance
+                width = sin(rads) * distance
+                height = -cos(rads) * distance
                 if self.altitude > self.set_altitude:
                     width, height = -width, -height
-                point = self.x+width, self.y+height
+                point = self.x + width, self.y + height
                 radius = 2
                 self.all_drawn.append(canvas.create_oval(point[0]-radius, point[1]-radius,
                                                          point[0]+radius, point[1]+radius,
@@ -747,17 +774,17 @@ class Sim:
             self.blips[blip_id].clear(self.canvas)
 
     def create_scenery(self):
-        self.airports["EGDM"] = Airport(400, 400,
-                                        230, "EGDM", "Boscombe Down",
-                                        self.canvas,
-                                        cta_boundary=plotCTA(400, 400, EGDM_CTA),
-                                        atc_stations=[Station("Boscombe Radar", 130.005, "radar", boundary=EGDM_CTA, isuser=True),  # Make boundary
-                                                      Station("Boscombe Tower", 130.755, "tower", atz_radius=2.5)],
-                                        ils="3000@7",
-                                        master=True)
-        self.master_airport = "EGDM"
-        self.airports["EGVO"] = Airport(400+nm2px(30), 400-nm2px(5), 270, "EGVO", "Odiham", self.canvas)
-        self.airports["EGVA"] = Airport(400-nm2px(1), 400-nm2px(31), 250, "EGVA", "Fairford", self.canvas)
+        scenery = EXERCISE["scenery"]
+        for airport_code in scenery["airports"]:
+            a = scenery["airports"][airport_code]
+            self.airports[airport_code] = Airport(x=a["xy"][0], y=a["xy"][1], rwy_hdg=a["runway_heading"],
+                                                  icao_code=airport_code, name=a["name"], auto_draw_canvas=self.canvas,
+                                                  cta_boundary=a["cta_boundary_plot_nm"] if "cta_boundary_plot_nm" in a.keys() else None,
+                                                  atc_stations=a["atc_stations"] if "atc_stations" in a.keys() else [],
+                                                  ils=a["ils_alt@nm"] if "ils_alt@nm" in a.keys() else "4000@10",
+                                                  master=a["master_airport"] if "master_airport" in a.keys() else False)
+            if "master_airport" in a.keys() and a["master_airport"] == True:
+                self.master_airport = airport_code
 
     def create_starter_aircraft(self):
         # For now, random blips
@@ -888,26 +915,26 @@ class Sim:
             y_val += y_step
 
         self.speed = tk.Label(self.root, text="Sim speed: "+str(DISPLAY["SIM_SPEED"])+"x", bg=SCREEN_BG)
-        self.speed.place(x=(self.master_width-self.screen_lengths)/2, y=5)
+        self.speed.place(x=(self.master_width-self.screen_lengths) / 2, y=5)
         if DISPLAY["WEATHER"] == "OFF":
             lbl_txt = "N/A"
         elif DISPLAY["WEATHER"] == "RANDOM":
             weather_package = randomWeather("EGDM")  # Auto req
-            lbl_txt = weather_package["METAR"]
+            lbl_txt = weather_package["raw_text"]
         elif DISPLAY["WEATHER"] == "LIVE":
             weather_package = liveWeather("EGDM")  # Auto req
-            lbl_txt = weather_package["METAR"]
+            lbl_txt = weather_package["raw_text"]
         self.metar = tk.Label(self.root, text="METAR: "+lbl_txt, bg=SCREEN_BG)
-        self.metar.place(x=(self.master_width-self.screen_lengths)/2, y=self.screen_lengths - 25)  # 25 is purely visual adjustment        
+        self.metar.place(x=(self.master_width-self.screen_lengths) / 2, y=self.screen_lengths - 25)  # 25 is purely visual adjustment        
 
 
 def btn_padx(text):
     global SCREEN
     master, screen = SCREEN
-    desired = (master-screen)/2
+    desired = (master - screen) / 2
     length = font.nametofont("TkDefaultFont").measure(text)
-    padx = (desired-length)/2
-    return padx-10
+    padx = (desired - length) / 2
+    return padx - 10
 
 
 def reset_sim():
