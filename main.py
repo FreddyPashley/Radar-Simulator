@@ -11,6 +11,7 @@ Automatic callups
 Scenario loading and setup (incl new aircraft, disappear on boundary exit)
 Controller coordination
 Weather environment link i.e. aircraft respond to weather
+NAVAIDS
 """
 
 # IMPORTS
