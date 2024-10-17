@@ -314,6 +314,7 @@ def pointInPoly(x, y, corners):
         for i in range(len(line2)):
             line2[i] = [nm2px(line2[i][0]), nm2px(line2[i][1])]
         intersect = doLinesCross(*point_line, *line2)
+        print(intersect)
         print(point_line)
         print(line2)
         if intersect:
@@ -615,8 +616,7 @@ class Blip:
             self.location_history.pop(0)
 
         """
-        TEST: FUNCTION BROKEN!
-        if pointInPoly(self.x, self.y, EGDM_CTA):  # Used for if blip in cta for contact later
+        if pointInPoly(self.x, self.y, EXERCISE["scenery"]["airports"][EXERCISE["exercise_info"]["master_airport"]]["cta_boundary_plot_nm"]):  # Used for if blip in cta for contact later
             print(self.callsign+" inside CTA")
         """
 

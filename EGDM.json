@@ -4,7 +4,7 @@
         "author": "Freddy Pashley"
     },
     "display_override": {
-        "C/S_SSR": "SSR",
+        "C/S_SSR": "C/S",
         "RINGS": true,
         "RINGS_N": 3,
         "RINGS_D": 10,
