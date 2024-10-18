@@ -1,8 +1,7 @@
 """
 TO DO:
 
-Separation alerts - NEEDS TESTING
-Aircraft go to waypoint algorithm (incl approaches, takeoff etc, special)
+Aircraft advanced pathfinding (ILS, navaids, etc)
 Airspace boundaries - Func needs fixing
 If x,y in area function - See above
 Controls for aircraft from cmd
@@ -58,6 +57,7 @@ DISPLAY = {"TICKED": False,  # Print when sim ticks in terminal
            "SIM_LABEL": "SIM CONTROLS",  # Label text for sim controls on left side,
            "SIM_SPEED": 1,  # Multiplier for TICK_DURATION
            "WEATHER": "OFF",  # Toggles OFF RANDOM LIVE
+           "LIVE_WEATHER": {},  # Live weather for aircraft to be affected by
            }
 if "display_override" in EXERCISE.keys():
     for k in EXERCISE["display_override"]:
@@ -483,6 +483,7 @@ class Blip:
         self.altitude_history = []
         self.desired_altitude = random.randint(self.altitude - 1000, self.altitude + 1000)
         self.desired_heading = random.randint(self.hdg - 200, self.hdg + 200)
+        self.true_heading = None  # For wind drift
         while self.desired_heading < 0:
             self.desired_heading += 10
         while self.desired_heading > 360:
@@ -551,6 +552,13 @@ class Blip:
                 self.altitude = next_altitude
         else:
             self.altitude_history.append(self.altitude)
+
+        if DISPLAY["LIVE_WEATHER"] != {}:
+            wind_deg = DISPLAY["LIVE_WEATHER"]["wind"]["degrees"]
+            wind_kts = DISPLAY["LIVE_WEATHER"]["wind"]["speed"]
+        else:
+            wind_deg = None
+            wind_kts = None # CONTINUE
 
         # HEADING
         """
@@ -919,12 +927,14 @@ class Sim:
         self.speed.place(x=(self.master_width-self.screen_lengths) / 2, y=5)
         if DISPLAY["WEATHER"] == "OFF":
             lbl_txt = "N/A"
+            weather_package = {}
         elif DISPLAY["WEATHER"] == "RANDOM":
             weather_package = randomWeather("EGDM")  # Auto req
             lbl_txt = weather_package["raw_text"]
         elif DISPLAY["WEATHER"] == "LIVE":
             weather_package = liveWeather("EGDM")  # Auto req
             lbl_txt = weather_package["raw_text"]
+        DISPLAY["LIVE_WEATHER"] = weather_package
         self.metar = tk.Label(self.root, text="METAR: "+lbl_txt, bg=SCREEN_BG)
         self.metar.place(x=(self.master_width-self.screen_lengths) / 2, y=self.screen_lengths - 25)  # 25 is purely visual adjustment        
 
