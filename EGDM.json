@@ -21,9 +21,34 @@
         "WEATHER": "RANDOM"
     },
     "scenery": {
+        "aircraft": {
+            "GBTMR": {
+                "xy_nm": [-30, -30],
+                "hdg": 90,
+                "kts": 250,
+                "alt": 5000,
+                "squawk": "7000",
+                "route": [
+                    {"x": 400, "y": 400, "alt": 6000, "hdg": null, "kts": 300},
+                    {"navaid": "POP", "alt": 7000, "hdg": null, "kts": 350},
+                    {"code": "EGDM", "rwy": 230, "replace": true, "routeThere": null}
+                ]
+            },
+            "NUGGET11": {
+                "xy_nm": [25, -5],
+                "hdg": 355,
+                "kts": 230,
+                "alt": 7000,
+                "squawk": "7000",
+                "route": [
+                    {"x": 400, "y": 400, "alt": 6000, "hdg": null, "kts": 300},
+                    {"navaid": "POP", "alt": 7000, "hdg": null, "kts": 350}
+                ]
+            }
+        },
         "airports": {
             "EGDM": {
-                "xy": [400, 400],
+                "xy": [0, 0],
                 "runway_heading": 230,
                 "name": "Boscombe Down",
                 "cta_boundary_plot_nm": [[-20, -15], [-10, -18], [15, -19], [20, -21], [15, -5], [19, 15], [0, 20], [-10, 18], [-18, 20], [-22, 8]],
@@ -43,7 +68,8 @@
                         "is_user": false
                     }
                 ],
-                "ils_alt@nm": "3000@7",
+                "ils_alt@nm": "3000@10",
+                "ils_end_nm": 15,
                 "master_airport": true
             },
             "EGVO": {
@@ -55,6 +81,12 @@
                 "xy": [-1, -31],
                 "runway_heading": 250,
                 "name": "Fairford"
+            }
+        },
+        "navaids": {
+            "POP": {
+                "xy_nm": [18, 2],
+                "name": "Popham"
             }
         }
     },

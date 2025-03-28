@@ -10,7 +10,6 @@ Automatic callups
 Scenario loading and setup (incl new aircraft, disappear on boundary exit)
 Controller coordination
 Weather environment link i.e. aircraft respond to weather
-NAVAIDS
 """
 
 # IMPORTS
@@ -326,9 +325,9 @@ def pointInPoly(x, y, corners):
 # CLASSES
 class Airport:
     def __init__(self, x, y, rwy_hdg, icao_code, name, auto_draw_canvas=None, auto_draw=True,
-                 cta_boundary=None, atc_stations=[], ils="4000@10", master=False):
-        self.x = nm2px(x) if not master else x
-        self.y = nm2px(y) if not master else x
+                 cta_boundary=None, atc_stations=[], ils="3500@10", ils_end_nm=15, master=False):
+        self.x = x
+        self.y = y
         self.rwy_hdg = rwy_hdg
         self.icao = icao_code
         self.name = name
@@ -345,11 +344,53 @@ class Airport:
                                  isuser=s["is_user"]) for s in atc_stations]
         self.atz_radius = None
         self.ils_alt_10nm = self.calc_ils_alt(ils)
+        self.ils_end_nm = ils_end_nm
+        self.ils_waypoints = self.generateILSWaypoints()
         for station in self.stations:
             if station.type == "tower" and type(station.cta) in (int, float):
                 self.atz_radius = station.cta
         if auto_draw:
             self.draw(auto_draw_canvas)
+
+    def generateILSWaypoints(self):
+        alts = {str(i): None for i in range(1, self.ils_end_nm + 1)}
+        xy = {str(self.rwy_hdg): {str(i): None for i in range(1, self.ils_end_nm + 1)},
+              str(self.rwy_hdg + 180): {str(i): None for i in range(1, self.ils_end_nm + 1)}}
+        alts["10"] = self.ils_alt_10nm
+        rate_of_descent = self.ils_alt_10nm / 10
+        distance = 1
+        for k in alts:
+            alts[k] = distance * rate_of_descent
+            distance += 1
+        for k in xy:
+            rwy_angle = float(k)
+            rwy_angle = radians(rwy_angle)
+            for j in xy[k]:
+                distance = int(j)
+                y = -cos(rwy_angle) * nm2px(distance)
+                x = sin(rwy_angle) * nm2px(distance)
+                y += self.y
+                x += self.x
+                xy[k][j] = [x, y]
+        self.ilsAlts = alts
+        self.ilsXY = xy
+
+    def generateILSRoute(self, rwy_hdg):
+        route = []
+        for nm in self.ilsXY[str(rwy_hdg)]:
+            alt = self.ilsAlts[nm]
+            x, y = self.ilsXY[str(rwy_hdg)][nm]
+            nm = float(nm)
+            if nm <= 4:
+                speed = 120
+            elif nm <= 6:
+                speed = 160
+            elif nm <= 10:
+                speed = 180
+            else:
+                speed = 190
+            route.append({"x": x, "y": y, "alt": alt, "hdg": None, "kts": speed})
+        return route
 
     def calc_ils_alt(self, ils):
         alt, dist = ils.split("@")
@@ -360,6 +401,13 @@ class Airport:
         return alt_10
 
     def draw(self, canvas):
+        for k in self.ilsXY:
+            for i, j in enumerate(self.ilsXY[k]):
+                x, y = self.ilsXY[k][j]
+                # self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1)) DRAW ILS WAYPOINTS
+                # self.all_drawn.append(tk.Label(canvas, text=str(self.ilsAlts[str(i+1)])).place(x=x, y=y))
+
+
         centerline_package = self.rwy_centerlines()
         for x, y in centerline_package:
             self.all_drawn.append(canvas.create_line(self.x, self.y, x, y, fill=SCREEN_FG))
@@ -470,7 +518,7 @@ class Airport:
 
 
 class Blip:
-    def __init__(self, x, y, hdg, kts, callsign, altitude, squawk,
+    def __init__(self, x, y, hdg, kts, callsign, altitude, squawk, route,
                  active_station=None, auto_draw_canvas=None, auto_draw=True):
         self.x = x
         self.y = y
@@ -478,20 +526,11 @@ class Blip:
         self.kts = kts
         self.callsign = callsign
         self.squawk = squawk
+        self.route = route
         self.location_history = []
         self.altitude = altitude
         self.altitude_history = []
-        self.desired_altitude = random.randint(self.altitude - 1000, self.altitude + 1000)
-        self.desired_heading = random.randint(self.hdg - 200, self.hdg + 200)
-        self.true_heading = None  # For wind drift
-        while self.desired_heading < 0:
-            self.desired_heading += 10
-        while self.desired_heading > 360:
-            self.desired_heading -= 10
-        self.desired_speed = random.randint(self.kts - 100, self.kts + 100)
-        self.waiting_for_app = False
-        self.following_app = False
-        self.planned_go_around = False  # needs implementing
+        self.selected_ils = None
         self.conflicting = False  # Needs testing
         self.blip_radius = 5
         self.atc_package = {"controlled": False,
@@ -502,6 +541,19 @@ class Blip:
         self.all_drawn = []
         self.active_station = active_station
         if auto_draw: self.draw(auto_draw_canvas)
+
+    def loadILS(self, icao, rwy, replace=False, routeThere=None):
+        ILSroute = sim.airports[icao].generateILSRoute(rwy)
+        ILSroute = ILSroute[::-1]  # ILSroute[-1] is first point on localiser
+        if routeThere:
+            ILSroute.insert(0, routeThere)
+        if replace:
+            self.route = ILSroute
+        else:
+            for point in ILSroute:
+                self.route.append(point)
+        self.selected_ils = "/".join((icao, str(rwy)))
+        print("Loaded ILS", self.route)
 
     def altitude_direction(self):
         char = "-"
@@ -520,39 +572,101 @@ class Blip:
             alt = "0" + alt
         return alt
 
+    def addWaypointToRoute(self, navaid, alt=None, kts=None, append_=True):
+        if navaid in EXERCISE["scenery"]["navaids"]:
+            x, y = EXERCISE["scenery"]["navaids"][navaid]["xy_nm"]
+            x = EXERCISE["middle"] + nm2px(x)
+            y = EXERCISE["middle"] + nm2px(y)
+            r = {"x": x, "y": y, "hdg": None, "alt": alt, "kts": kts}
+            if append_:
+                self.route.append(r)
+            else:
+                return r
+
     def hdg_to_coord(self, dist, unit):
         length = nm2px(dist2m(self.kts, dist, unit))
         rads = radians(self.hdg)
         width = sin(rads) * length
         height = -cos(rads) * length
         return self.x + width, self.y + height
-    
+
+    def coord_to_hdg(self, x, y):
+        from math import atan2, degrees
+        dx = x - self.x
+        dy = y - self.y
+        rads = atan2(dx, -dy)
+        degs = degrees(rads)
+        return (degs + 360) % 360
 
     def move(self, canvas):
-        # APPROACH IMPLEMENTATION REQ!
-
+        def convertFirstRoutePoint():
+            if self.route != []:
+                if "navaid" in self.route[0]:
+                    self.selected_ils = None
+                    self.route[0] = self.addWaypointToRoute(self.route[0]["navaid"], alt=self.route[0]["alt"], kts=self.route[0]["kts"], append_=False)
+                elif "code" in self.route[0]:  # load for specific rwy required
+                    self.loadILS(self.route[0]["code"], rwy=self.route[0]["rwy"], replace=self.route[0]["replace"], routeThere=self.route[0]["routeThere"])
+                else:
+                    raise Exception("to do")
+                x, y = self.route[0]["x"], self.route[0]["y"]
+                if pointInCircle(self.x, self.y, x, y, nm2px(1)):  # Success if within 1nm radius of waypoint
+                    self.route.pop(0)  # next iter req (no alt in raw ils point)
+                    convertFirstRoutePoint()
+                else:
+                    hdg = self.coord_to_hdg(x, y)
+                    self.route[0]["hdg"] = hdg
+            
+        print(self.selected_ils)
+        if self.selected_ils is not None:
+            print("pic", pointInCircle(self.x, self.y, sim.airports[self.selected_ils.split("/")[0]].x, sim.airports[self.selected_ils.split("/")[0]].y, radius=nm2px(2)))
+            # BROKEN
+            raise
+            if pointInCircle(self.x, self.y, sim.airports[self.selected_ils.split("/")[0]].x, sim.airports[self.selected_ils.split("/")[0]].y, radius=nm2px(2)):
+                print(self.route)
+                if len(self.route) <= 1:
+                    del sim.blips[self.callsign]  # Delete this blip
+                else:
+                    convertFirstRoutePoint()  # More routing after ILS touchdown e.g., go around
+            else:
+                convertFirstRoutePoint()
+        else:
+            convertFirstRoutePoint()
 
         # ALTITUDE
-        vertical_speed = 200  # fpm will edit for speed
-        t = (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
-        t /= 60
-        vertical_speed *= t
-        if self.desired_altitude is not None:
-            if self.desired_altitude < self.altitude:
-                vertical_speed *= -1
-            next_altitude = self.altitude + vertical_speed
+        if self.selected_ils is None:
+            vertical_speed = 200  # random?
+            t = (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
+            t /= 60
+            vertical_speed *= t
+        else:
+            vertical_speed = None
+        if self.route != [] and self.route[0]["alt"] is not None:
+            if vertical_speed is not None:
+                if self.route[0]["alt"] < self.altitude:
+                    vertical_speed *= -1
+                next_altitude = self.altitude + vertical_speed
+            else:  # vs is None => ILS enabled
+                next_altitude = self.route[0]["alt"]
+                alt_diff = self.altitude - next_altitude
+                dx = self.x - self.route[0]["x"]
+                dy = self.y - self.route[0]["y"]
+                dist = (dx ** 2) + (dy ** 2)
+                dist = dist ** 0.5
+                vertical_speed = alt_diff / (dist * self.kts / 60)
+                print("VS", vertical_speed)
             self.altitude_history.append(self.altitude)
-            if vertical_speed < 0 and next_altitude < self.desired_altitude:
-                self.altitude = self.desired_altitude
-                self.desired_altitude = None
-            elif vertical_speed > 0 and next_altitude > self.desired_altitude:
-                self.altitude = self.desired_altitude
-                self.desired_altitude = None
+            if vertical_speed < 0 and next_altitude < self.route[0]["alt"]:
+                self.altitude = self.route[0]["alt"]
+                self.route[0]["alt"] = None
+            elif vertical_speed > 0 and next_altitude > self.route[0]["alt"]:
+                self.altitude = self.route[0]["alt"]
+                self.route[0]["alt"] = None
             else:
                 self.altitude = next_altitude
         else:
             self.altitude_history.append(self.altitude)
 
+        # Need to implement wind drift
         if DISPLAY["LIVE_WEATHER"] != {}:
             wind_deg = DISPLAY["LIVE_WEATHER"]["wind"]["degrees"]
             wind_kts = DISPLAY["LIVE_WEATHER"]["wind"]["speed"]
@@ -572,35 +686,35 @@ class Blip:
         """
         degrees_per_sec = 2
         degrees = degrees_per_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
-        if self.desired_heading is not None:
-            if self.desired_heading > self.hdg:
+        if self.route != [] and self.route[0]["hdg"] is not None:
+            if self.route[0]["hdg"] > self.hdg:
                 next_hdg = self.hdg + degrees
-            elif self.desired_heading < self.hdg:
+            elif self.route[0]["hdg"] < self.hdg:
                 next_hdg = self.hdg - degrees
             else:
                 next_hdg = self.hdg
-            if next_hdg < self.hdg and next_hdg < self.desired_heading:
-                self.hdg = self.desired_heading
-                self.desired_heading = None
-            elif next_hdg > self.hdg and next_hdg > self.desired_heading:
-                self.hdg = self.desired_heading
-                self.desired_heading = None
+            if next_hdg < self.hdg and next_hdg < self.route[0]["hdg"]:
+                self.hdg = self.route[0]["hdg"]
+                self.route[0]["hdg"] = None
+            elif next_hdg > self.hdg and next_hdg > self.route[0]["hdg"]:
+                self.hdg = self.route[0]["hdg"]
+                self.route[0]["hdg"] = None
             else:
                 self.hdg = next_hdg
 
         # SPEED
         rate_kts_sec = 2
         rate = rate_kts_sec * (TICK_DURATION * DISPLAY["SIM_SPEED"]) / 1000
-        if self.desired_speed is not None:
-            if self.desired_speed < self.kts:
+        if self.route != [] and self.route[0]["kts"] is not None:
+            if self.route[0]["kts"] < self.kts:
                 rate *= -1
             next_speed = self.kts + rate
-            if next_speed < self.kts and next_speed < self.desired_speed:
-                self.kts = self.desired_speed
-                self.desired_speed = None
-            elif next_speed > self.kts and next_speed > self.desired_speed:
-                self.kts = self.desired_speed
-                self.desired_speed = None
+            if next_speed < self.kts and next_speed < self.route[0]["kts"]:
+                self.kts = self.route[0]["kts"]
+                self.route[0]["kts"] = None
+            elif next_speed > self.kts and next_speed > self.route[0]["kts"]:
+                self.kts = self.route[0]["kts"]
+                self.route[0]["kts"] = None
             else:
                 self.kts = next_speed
 
@@ -613,7 +727,7 @@ class Blip:
         if DISPLAY["CRUMBS"]:
             other = True
             for x, y in self.location_history:
-                if other: self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1, fill=SCREEN_FG))
+                if other: self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1, outline=SCREEN_FG, fill=SCREEN_BG))
                 other = not other
         else:
             self.location_history = []
@@ -676,11 +790,13 @@ class Blip:
             self.hdg_line = None
         self.blip = blip
         self.draw_label(canvas, colour="#f00" if colour == "#f00" else None)
+        """
         if DISPLAY["CRUMBS"]:
             other = True
             for x, y in self.location_history:
                 if other: self.all_drawn.append(canvas.create_oval(x-1, y-1, x+1, y+1, outline=colour, fill=SCREEN_BG))
                 other = not other
+        """
         if DISPLAY["EST_ALT_REACH"]:
             alt_remaining = abs(self.altitude-self.set_altitude)
             miles_per_min = self.kts / 60
@@ -753,6 +869,7 @@ class Sim:
         self.master_width = 1200
         self.master_height = 800
         self.screen_lengths = self.master_height
+        EXERCISE["middle"] = self.screen_lengths / 2
         global SCREEN
         SCREEN = [self.master_width, self.screen_lengths]
         self.screen_lengths_nm = self.screen_lengths//SCALE_FACTOR
@@ -786,27 +903,35 @@ class Sim:
         scenery = EXERCISE["scenery"]
         for airport_code in scenery["airports"]:
             a = scenery["airports"][airport_code]
-            self.airports[airport_code] = Airport(x=a["xy"][0], y=a["xy"][1], rwy_hdg=a["runway_heading"],
-                                                  icao_code=airport_code, name=a["name"], auto_draw_canvas=self.canvas,
+            self.airports[airport_code] = Airport(x=(self.screen_lengths / 2)+nm2px(a["xy"][0]), y=(self.screen_lengths / 2)+nm2px(a["xy"][1]),
+                                                  rwy_hdg=a["runway_heading"], icao_code=airport_code, name=a["name"], auto_draw_canvas=self.canvas,
                                                   cta_boundary=a["cta_boundary_plot_nm"] if "cta_boundary_plot_nm" in a.keys() else None,
                                                   atc_stations=a["atc_stations"] if "atc_stations" in a.keys() else [],
-                                                  ils=a["ils_alt@nm"] if "ils_alt@nm" in a.keys() else "4000@10",
+                                                  ils=a["ils_alt@nm"] if "ils_alt@nm" in a.keys() else "3500@10",
+                                                  ils_end_nm=a["ils_end_nm"] if "ils_end_nm" in a.keys() else 15,
                                                   master=a["master_airport"] if "master_airport" in a.keys() else False)
             if "master_airport" in a.keys() and a["master_airport"] == True:
                 self.master_airport = airport_code
+        for navaid in scenery["navaids"]:
+            x, y = scenery["navaids"][navaid]["xy_nm"]
+            name = scenery["navaids"][navaid]["name"]
+            x = (self.screen_lengths / 2) + nm2px(x)
+            y = (self.screen_lengths / 2) + nm2px(y)
+            self.canvas.create_rectangle(x-1, y-1, x+1, y+1, fill=SCREEN_BG, outline=SCREEN_FG)
+            lbl = tk.Label(self.canvas, text=navaid, bg=SCREEN_BG, fg=SCREEN_FG)
+            lbl.place(x=x+5, y=y-5)
 
     def create_starter_aircraft(self):
-        # For now, random blips
-        for i in range(6):
-            self.blips[str(i)] = Blip(random.randint(0, 800),
-                                      random.randint(0, 800),
-                                      random.randint(0, 359),
-                                      random.randint(100, 400),
-                                      randomRegistration(),
-                                      random.randint(500, 10000),
-                                      7000,
-                                      None,
-                                      self.canvas)
+        for callsign in EXERCISE["scenery"]["aircraft"]:
+            ac = EXERCISE["scenery"]["aircraft"][callsign]
+            self.blips[callsign] = Blip(x=(self.screen_lengths / 2) + nm2px(ac["xy_nm"][0]),
+                                        y=(self.screen_lengths / 2) + nm2px(ac["xy_nm"][1]),
+                                        hdg=ac["hdg"], kts=ac["kts"],
+                                        callsign=callsign,
+                                        altitude=ac["alt"], squawk=ac["squawk"],
+                                        route=ac["route"],
+                                        active_station=None,
+                                        auto_draw_canvas=self.canvas)
         """
         # Conflict testing
         self.blips["10"] = Blip(300, 300, 90, 120, "GTEST", 3000, 7000, None, self.canvas)
@@ -923,7 +1048,7 @@ class Sim:
             getattr(self, key).place(x=5, y=y_val)
             y_val += y_step
 
-        self.speed = tk.Label(self.root, text="Sim speed: "+str(DISPLAY["SIM_SPEED"])+"x", bg=SCREEN_BG)
+        self.speed = tk.Label(self.root, text="Sim speed: "+str(float(DISPLAY["SIM_SPEED"]))+"x", bg=SCREEN_BG)
         self.speed.place(x=(self.master_width-self.screen_lengths) / 2, y=5)
         if DISPLAY["WEATHER"] == "OFF":
             lbl_txt = "N/A"
@@ -950,6 +1075,16 @@ def btn_padx(text):
 
 def reset_sim():
     sim.clear()
+    for callsign in EXERCISE["scenery"]["aircraft"]:
+        ac = EXERCISE["scenery"]["aircraft"][callsign]
+        sim.blips[callsign] = Blip(x=(sim.screen_lengths / 2) + nm2px(ac["xy_nm"][0]),
+                                   y=(sim.screen_lengths / 2) + nm2px(ac["xy_nm"][1]),
+                                   hdg=ac["hdg"], kts=ac["kts"],
+                                   callsign=callsign,
+                                   altitude=ac["alt"], squawk=ac["squawk"],
+                                   route=ac["route"],
+                                   active_station=None,
+                                   auto_draw_canvas=sim.canvas, auto_draw=False)
     sim.draw()
     if not PAUSED:
         change_pause()
@@ -994,22 +1129,22 @@ def change_weather(counter=True):
 
 def speed_increase(counter=True):
     global DISPLAY
-    if counter: DISPLAY["SIM_SPEED"] += 0.25
+    if counter: DISPLAY["SIM_SPEED"] += 0.5
     lbl_txt = "Sim speed: "+str(DISPLAY["SIM_SPEED"])+"x"
     sim.speed.configure(text=lbl_txt, bg=SCREEN_BG)
 
 def speed_decrease(counter=True):
     global DISPLAY
-    if counter: DISPLAY["SIM_SPEED"] -= 0.25
-    if DISPLAY["SIM_SPEED"] < 0.25:
-        DISPLAY["SIM_SPEED"] = 0.25
+    if counter: DISPLAY["SIM_SPEED"] -= 0.5
+    if DISPLAY["SIM_SPEED"] < 0.5:
+        DISPLAY["SIM_SPEED"] = 0.5
     lbl_txt = "Sim speed: "+str(DISPLAY["SIM_SPEED"])+"x"
     sim.speed.configure(text=lbl_txt, bg=SCREEN_BG)
 
 def speed_reset(counter=True):
     global DISPLAY
     if counter: DISPLAY["SIM_SPEED"] = 1
-    lbl_txt = "Sim speed: 1x"
+    lbl_txt = "Sim speed: 1.0x"
     sim.speed.configure(text=lbl_txt, bg=SCREEN_BG)
 
 def change_lines(counter=True):
@@ -1208,6 +1343,7 @@ def change_pause(counter=True):
 def tick():
     if not PAUSED:
         for blip_id in sim.blips:
+            """ NOT DETECTING CONFLICTS
             for b_id in sim.blips:
                 if blip_id == b_id: continue
                 b1 = sim.blips[blip_id]
@@ -1220,6 +1356,10 @@ def tick():
                     if alt_diff < 1000:
                         b2.conflicting = True
                         b1.conflicting = True
+                else:
+                    b2.conflicting = False
+                    b1.conflicting = False
+            """
             sim.blips[blip_id].clear(sim.canvas)
             sim.blips[blip_id].draw(sim.canvas)
         if DISPLAY["TICKED"]:
